@@ -1,16 +1,10 @@
-use ark_ec::PairingEngine;
-use ark_ff::bytes::ToBytes;
+use ark_ec::pairing::Pairing;
 use ark_serialize::*;
-use ark_std::{
-    io::{self, Result as IoResult},
-    vec::Vec,
-};
-
-
+use ark_std::vec::Vec;
 
 /// A proof in the BPR20 SNARK.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct Proof<E: PairingEngine> {
+pub struct Proof<E: Pairing> {
     /// The `A` element in `G1`.
     pub a: E::G1Affine,
     /// The `B` element in `G2`.
@@ -21,17 +15,7 @@ pub struct Proof<E: PairingEngine> {
     pub delta_prime: E::G2Affine,
 }
 
-impl<E: PairingEngine> ToBytes for Proof<E> {
-    #[inline]
-    fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        self.a.write(&mut writer)?;
-        self.b.write(&mut writer)?;
-        self.c.write(&mut writer)?;
-        self.delta_prime.write(&mut writer)
-    }
-}
-
-impl<E: PairingEngine> Default for Proof<E> {
+impl<E: Pairing> Default for Proof<E> {
     fn default() -> Self {
         Self {
             a: E::G1Affine::default(),
@@ -42,12 +26,9 @@ impl<E: PairingEngine> Default for Proof<E> {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 /// A verification key in the BPR20 SNARK.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct VerifyingKey<E: PairingEngine> {
+pub struct VerifyingKey<E: Pairing> {
     /// The `alpha * G`, where `G` is the generator of `E::G1`.
     pub alpha_g1: E::G1Affine,
     /// The `alpha * H`, where `H` is the generator of `E::G2`.
@@ -59,27 +40,12 @@ pub struct VerifyingKey<E: PairingEngine> {
     /// The `gamma^{-1} * (beta * a_i + alpha * b_i + c_i) * H`, where `H` is the generator of `E::G1`.
     pub gamma_abc_g1: Vec<E::G1Affine>,
     /// The element `e(alpha * G, beta * H)` in `E::GT`.
-    pub alpha_g1_beta_g2: E::Fqk,
-    /// The element `zt*delta^{-1}` in `E::G1` 
+    pub alpha_g1_beta_g2: E::TargetField,
+    /// The element `zt*delta^{-1}` in `E::G1`.
     pub zt_delta_g1: E::G1Affine,
 }
 
-impl<E: PairingEngine> ToBytes for VerifyingKey<E> {
-    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.alpha_g1.write(&mut writer)?;
-        self.beta_g2.write(&mut writer)?;
-        self.gamma_g2.write(&mut writer)?;
-        self.delta_g2.write(&mut writer)?;
-        for q in &self.gamma_abc_g1 {
-            q.write(&mut writer)?;
-        }
-        self.alpha_g1_beta_g2.write(&mut writer)?;
-        self.zt_delta_g1.write(&mut writer)?;
-        Ok(())
-    }
-}
-
-impl<E: PairingEngine> Default for VerifyingKey<E> {
+impl<E: Pairing> Default for VerifyingKey<E> {
     fn default() -> Self {
         Self {
             alpha_g1: E::G1Affine::default(),
@@ -87,7 +53,7 @@ impl<E: PairingEngine> Default for VerifyingKey<E> {
             gamma_g2: E::G2Affine::default(),
             delta_g2: E::G2Affine::default(),
             gamma_abc_g1: Vec::new(),
-            alpha_g1_beta_g2: E::Fqk::default(),
+            alpha_g1_beta_g2: E::TargetField::default(),
             zt_delta_g1: E::G1Affine::default(),
         }
     }
@@ -95,27 +61,27 @@ impl<E: PairingEngine> Default for VerifyingKey<E> {
 
 /// Preprocessed verification key parameters that enable faster verification
 /// at the expense of larger size in memory.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PreparedVerifyingKey<E: PairingEngine> {
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+pub struct PreparedVerifyingKey<E: Pairing> {
     /// The unprepared verification key.
     pub vk: VerifyingKey<E>,
     /// The element `- gamma * H` in `E::G2`, prepared for use in pairings.
     pub gamma_g2_neg_pc: E::G2Prepared,
 }
 
-impl<E: PairingEngine> From<PreparedVerifyingKey<E>> for VerifyingKey<E> {
+impl<E: Pairing> From<PreparedVerifyingKey<E>> for VerifyingKey<E> {
     fn from(other: PreparedVerifyingKey<E>) -> Self {
         other.vk
     }
 }
 
-impl<E: PairingEngine> From<VerifyingKey<E>> for PreparedVerifyingKey<E> {
+impl<E: Pairing> From<VerifyingKey<E>> for PreparedVerifyingKey<E> {
     fn from(other: VerifyingKey<E>) -> Self {
         crate::prepare_verifying_key(&other)
     }
 }
 
-impl<E: PairingEngine> Default for PreparedVerifyingKey<E> {
+impl<E: Pairing> Default for PreparedVerifyingKey<E> {
     fn default() -> Self {
         Self {
             vk: VerifyingKey::default(),
@@ -124,20 +90,9 @@ impl<E: PairingEngine> Default for PreparedVerifyingKey<E> {
     }
 }
 
-impl<E: PairingEngine> ToBytes for PreparedVerifyingKey<E> {
-    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.vk.write(&mut writer)?;
-        self.gamma_g2_neg_pc.write(&mut writer)?;
-        Ok(())
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-/// The prover key for for the BPR20 zkSNARK.
+/// The prover key for the BPR20 zkSNARK.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct ProvingKey<E: PairingEngine> {
+pub struct ProvingKey<E: Pairing> {
     /// The underlying verification key.
     pub vk: VerifyingKey<E>,
     /// The element `beta * G` in `E::G1`.

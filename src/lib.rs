@@ -15,10 +15,6 @@
 #[macro_use]
 extern crate ark_std;
 
-#[cfg(feature = "r1cs")]
-#[macro_use]
-extern crate derivative;
-
 /// Reduce an R1CS instance to a *Quadratic Arithmetic Program* instance.
 pub(crate) mod r1cs_to_qap;
 
@@ -34,7 +30,7 @@ pub mod prover;
 /// Verify proofs for the BPR20 zkSNARK construction.
 pub mod verifier;
 
-/// Constraints for the BPR20 verifier.
+/// Constraints for the BPR20 verifier (stubbed for this 0.4 migration).
 #[cfg(feature = "r1cs")]
 pub mod constraints;
 
@@ -43,26 +39,27 @@ mod test;
 
 pub use self::data_structures::*;
 pub use self::{generator::*, prover::*, verifier::*};
+pub use ark_std::vec::Vec;
 
 use ark_crypto_primitives::snark::*;
-use ark_ec::PairingEngine;
+use ark_ec::pairing::Pairing;
 use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
-use ark_std::rand::RngCore;
-use ark_std::{marker::PhantomData, vec::Vec};
+use ark_std::rand::{RngCore, CryptoRng};
+use ark_std::marker::PhantomData;
 
 /// The SNARK of [[BPR20]](https://eprint.iacr.org/2020/1306.pdf).
-pub struct BPR20<E: PairingEngine> {
+pub struct BPR20<E: Pairing> {
     e_phantom: PhantomData<E>,
 }
 
-impl<E: PairingEngine> SNARK<E::Fr> for BPR20<E> {
+impl<E: Pairing> SNARK<E::ScalarField> for BPR20<E> {
     type ProvingKey = ProvingKey<E>;
     type VerifyingKey = VerifyingKey<E>;
     type Proof = Proof<E>;
     type ProcessedVerifyingKey = PreparedVerifyingKey<E>;
     type Error = SynthesisError;
 
-    fn circuit_specific_setup<C: ConstraintSynthesizer<E::Fr>, R: RngCore>(
+    fn circuit_specific_setup<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore + CryptoRng>(
         circuit: C,
         rng: &mut R,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
@@ -72,7 +69,7 @@ impl<E: PairingEngine> SNARK<E::Fr> for BPR20<E> {
         Ok((pk, vk))
     }
 
-    fn prove<C: ConstraintSynthesizer<E::Fr>, R: RngCore>(
+    fn prove<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore + CryptoRng>(
         pk: &Self::ProvingKey,
         circuit: C,
         rng: &mut R,
@@ -88,13 +85,11 @@ impl<E: PairingEngine> SNARK<E::Fr> for BPR20<E> {
 
     fn verify_with_processed_vk(
         circuit_pvk: &Self::ProcessedVerifyingKey,
-        x: &[E::Fr],
+        x: &[E::ScalarField],
         proof: &Self::Proof,
     ) -> Result<bool, Self::Error> {
         Ok(verify_proof(&circuit_pvk, proof, &x)?)
     }
 }
 
-
-
-impl<E: PairingEngine> CircuitSpecificSetupSNARK<E::Fr> for BPR20<E> {}
+impl<E: Pairing> CircuitSpecificSetupSNARK<E::ScalarField> for BPR20<E> {}

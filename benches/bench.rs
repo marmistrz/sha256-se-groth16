@@ -3,7 +3,7 @@
 // where N is the number of threads you want to use (N = 1 for single-thread).
 
 use ark_bls12_381::{Bls12_381, Fr as BlsFr};
-use ark_crypto_primitives::SNARK;
+use ark_crypto_primitives::snark::SNARK;
 use ark_ff::{PrimeField, UniformRand};
 use ark_bpr20::BPR20;
 use ark_mnt4_298::{Fr as MNT4Fr, MNT4_298};
@@ -15,6 +15,7 @@ use ark_relations::{
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 use ark_std::ops::Mul;
+use ark_std::rand::SeedableRng;
 
 use ark_bpr20::{Proof, vec_verify_proof};
 
@@ -69,7 +70,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for DummyCircuit<F> {
 
 macro_rules! bpr20_prove_bench {
     ($bench_name:ident, $bench_field:ty, $bench_pairing_engine:ty) => {
-        let rng = &mut ark_std::test_rng();
+        let rng = &mut ark_std::rand::rngs::StdRng::seed_from_u64(0u64);
         let c = DummyCircuit::<$bench_field> {
             a: Some(<$bench_field>::rand(rng)),
             b: Some(<$bench_field>::rand(rng)),
@@ -96,7 +97,7 @@ macro_rules! bpr20_prove_bench {
 
 macro_rules! bpr20_verify_bench {
     ($bench_name:ident, $bench_field:ty, $bench_pairing_engine:ty) => {
-        let rng = &mut ark_std::test_rng();
+        let rng = &mut ark_std::rand::rngs::StdRng::seed_from_u64(0u64);
         let c = DummyCircuit::<$bench_field> {
             a: Some(<$bench_field>::rand(rng)),
             b: Some(<$bench_field>::rand(rng)),
@@ -127,7 +128,7 @@ macro_rules! bpr20_verify_bench {
 
 macro_rules! bpr20_verify_bench_vec {
     ($bench_name:ident, $bench_field:ty, $bench_pairing_engine:ty) => {
-        let rng = &mut ark_std::test_rng();
+        let rng = &mut ark_std::rand::rngs::StdRng::seed_from_u64(0u64);
         let c = DummyCircuit::<$bench_field> {
             a: Some(<$bench_field>::rand(rng)),
             b: Some(<$bench_field>::rand(rng)),

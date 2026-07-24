@@ -1,14 +1,11 @@
-use crate::{
-    create_random_proof, generate_random_parameters, prepare_verifying_key,
-    verify_proof,
-};
-use ark_ec::PairingEngine;
+use crate::{create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof};
+use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 use ark_std::test_rng;
 
 use core::ops::MulAssign;
 
-use ark_ff::{Field};
+use ark_ff::Field;
 use ark_relations::{
     lc,
     r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
@@ -47,7 +44,7 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for MySillyCircuit<C
 
 fn test_prove_and_verify<E>(n_iters: usize)
 where
-    E: PairingEngine,
+    E: Pairing,
 {
     let rng = &mut test_rng();
 
@@ -57,8 +54,8 @@ where
     let pvk = prepare_verifying_key::<E>(&params.vk);
 
     for _ in 0..n_iters {
-        let a = E::Fr::rand(rng);
-        let b = E::Fr::rand(rng);
+        let a = E::ScalarField::rand(rng);
+        let b = E::ScalarField::rand(rng);
         let mut c = a;
         c.mul_assign(&b);
 
@@ -78,18 +75,17 @@ where
 }
 
 mod bls12_377 {
-    use super::{test_prove_and_verify};
+    use super::test_prove_and_verify;
     use ark_bls12_377::Bls12_377;
 
     #[test]
     fn prove_and_verify() {
         test_prove_and_verify::<Bls12_377>(100);
     }
-
 }
 
 mod cp6_782 {
-    use super::{test_prove_and_verify};
+    use super::test_prove_and_verify;
 
     use ark_cp6_782::CP6_782;
 
@@ -97,5 +93,4 @@ mod cp6_782 {
     fn prove_and_verify() {
         test_prove_and_verify::<CP6_782>(1);
     }
-
 }
