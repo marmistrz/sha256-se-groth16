@@ -2,13 +2,13 @@ use ark_ec::{pairing::Pairing, scalar_mul::BatchMulPreprocessing, AffineRepr, Cu
 use ark_ff::PrimeField;
 use ark_std::ops::Mul;
 
-use crate::prover::fiat_shamir_challenge;
 use super::{PreparedVerifyingKey, Proof, VerifyingKey};
+use crate::prover::fiat_shamir_challenge;
 
 use ark_relations::gr1cs::{Result as R1CSResult, SynthesisError};
 
-use core::ops::{AddAssign, Neg};
 use ark_std::vec::Vec;
+use core::ops::{AddAssign, Neg};
 
 /// Prepare the verifying key `vk` for use in proof verification.
 pub fn prepare_verifying_key<E: Pairing>(vk: &VerifyingKey<E>) -> PreparedVerifyingKey<E> {
@@ -102,7 +102,11 @@ pub fn vec_verify_proof_with_prepared_inputs<E: Pairing>(
     );
 
     let mut bool_results: Vec<_> = Vec::new();
-    for ((x, y), z) in elem_g2.iter().zip(proofs.iter()).zip(prepared_inputs.iter()) {
+    for ((x, y), z) in elem_g2
+        .iter()
+        .zip(proofs.iter())
+        .zip(prepared_inputs.iter())
+    {
         let delta_term = (x.into_group() + y.delta_prime.into_group())
             .neg()
             .into_affine();
@@ -112,11 +116,7 @@ pub fn vec_verify_proof_with_prepared_inputs<E: Pairing>(
                 z.into_affine().into(),
                 y.c.into(),
             ],
-            [
-                y.b.into(),
-                pvk.gamma_g2_neg_pc.clone(),
-                delta_term.into(),
-            ],
+            [y.b.into(), pvk.gamma_g2_neg_pc.clone(), delta_term.into()],
         ))
         .unwrap();
         let tmp = tmp1.0 == pvk.vk.alpha_g1_beta_g2;

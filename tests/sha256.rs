@@ -120,13 +120,9 @@ fn test_sha256_r_concat_puz_prove_time() {
 
     {
         let cs = ConstraintSystem::<Fr>::new_ref();
-        Sha256PuzzleCircuit {
-            r: Some(r),
-            puz,
-            y,
-        }
-        .generate_constraints(cs.clone())
-        .unwrap();
+        Sha256PuzzleCircuit { r: Some(r), puz, y }
+            .generate_constraints(cs.clone())
+            .unwrap();
         cs.finalize();
         println!("R1CS constraints: {}", cs.num_constraints());
         println!("instance vars:    {}", cs.num_instance_variables());
@@ -141,15 +137,9 @@ fn test_sha256_r_concat_puz_prove_time() {
 
     println!("\nSetup...");
     let setup_start = Instant::now();
-    let params = generate_random_parameters::<Bls12_377, _, _>(
-        Sha256PuzzleCircuit {
-            r: None,
-            puz,
-            y,
-        },
-        rng,
-    )
-    .expect("setup");
+    let params =
+        generate_random_parameters::<Bls12_377, _, _>(Sha256PuzzleCircuit { r: None, puz, y }, rng)
+            .expect("setup");
     let setup_time = setup_start.elapsed();
     println!("setup time: {setup_time:?}");
 
@@ -169,16 +159,8 @@ fn test_sha256_r_concat_puz_prove_time() {
         let public_inputs = pack_public_inputs(&puz, &y);
 
         let start = Instant::now();
-        let proof = create_random_proof(
-            Sha256PuzzleCircuit {
-                r: Some(r),
-                puz,
-                y,
-            },
-            &params,
-            rng,
-        )
-        .expect("prove");
+        let proof = create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng)
+            .expect("prove");
         let prove_dt = start.elapsed();
         total_proving += prove_dt;
 
@@ -200,16 +182,8 @@ fn test_sha256_r_concat_puz_prove_time() {
         rng.fill(&mut r);
         rng.fill(&mut puz);
         let y = sha256_r_concat_puz(&r, &puz);
-        let proof = create_random_proof(
-            Sha256PuzzleCircuit {
-                r: Some(r),
-                puz,
-                y,
-            },
-            &params,
-            rng,
-        )
-        .unwrap();
+        let proof =
+            create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng).unwrap();
         let mut bad = pack_public_inputs(&puz, &y);
         bad[0] = Fr::zero();
         assert!(!verify_proof(&pvk, &proof, &bad).unwrap());
@@ -223,16 +197,8 @@ fn test_sha256_r_concat_puz_prove_time() {
         rng.fill(&mut r);
         rng.fill(&mut puz);
         let y = sha256_r_concat_puz(&r, &puz);
-        let proof = create_random_proof(
-            Sha256PuzzleCircuit {
-                r: Some(r),
-                puz,
-                y,
-            },
-            &params,
-            rng,
-        )
-        .unwrap();
+        let proof =
+            create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng).unwrap();
         let mut wrong_puz = puz;
         wrong_puz[0] ^= 1;
         let bad = pack_public_inputs(&wrong_puz, &y);

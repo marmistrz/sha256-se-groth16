@@ -1,13 +1,12 @@
 use crate::{r1cs_to_qap::R1CStoQAP, Proof, ProvingKey};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
-use ark_ff::{Field, PrimeField, UniformRand, Zero, One};
-use ark_std::ops::Mul;
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::GeneralEvaluationDomain;
 use ark_relations::gr1cs::{
-    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, Result as R1CSResult,
-    SynthesisMode,
+    ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, Result as R1CSResult, SynthesisMode,
 };
 use ark_serialize::CanonicalSerialize;
+use ark_std::ops::Mul;
 use ark_std::rand::Rng;
 use ark_std::{cfg_into_iter, cfg_iter, vec::Vec};
 
