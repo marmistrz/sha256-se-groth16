@@ -168,7 +168,7 @@ fn test_mimc_bpr_20() {
         generate_random_parameters::<Bls12_377, _, _>(c, rng).unwrap()
     };
 
-    // Prepare the verification key (for proof verification)
+    // Prepare the verification key (for proof verification) 
     let pvk = prepare_verifying_key(&params.vk);
 
     println!("Creating proofs...");

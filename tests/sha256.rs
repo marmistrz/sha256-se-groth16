@@ -7,8 +7,10 @@
 //! # How to run
 //!
 //! ```bash
-//! -
+//! RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture
 //! ```
+//!
+//! Benchmarks the same circuit on BLS12-381, BLS12-377, and BN254.
 //!
 //! # Public-input order
 //!
@@ -20,12 +22,15 @@
 //! public_inputs = puz.to_field_elements() || Y.to_field_elements()
 //! ```
 
-use ark_bls12_377::{Bls12_377, Fr};
+use ark_bls12_377::Bls12_377;
+use ark_bls12_381::Bls12_381;
+use ark_bn254::Bn254;
 use ark_bpr20::{
     create_random_proof, generate_random_parameters, prepare_verifying_key, verify_proof,
 };
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
-use ark_ff::{ToConstraintField, Zero};
+use ark_ec::pairing::Pairing;
+use ark_ff::{PrimeField, ToConstraintField, Zero};
 use ark_r1cs_std::prelude::*;
 use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
@@ -33,6 +38,7 @@ use ark_relations::gr1cs::{
 use ark_std::rand::Rng;
 use ark_std::test_rng;
 use sha2::{Digest, Sha256};
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// Fixed lengths ⇒ fixed circuit shape (one setup for all instances).
@@ -40,6 +46,9 @@ use std::time::{Duration, Instant};
 /// single compression; a real compression API would avoid the padding block).
 const R_LEN: usize = 16;
 const PUZ_LEN: usize = 16;
+const SAMPLES: u32 = 15;
+/// Pause between curves so the CPU can cool down before the next benchmark.
+const COOLDOWN: Duration = Duration::from_secs(10);
 
 /// Native SHA-256 of `R || puz` (used only to build concrete instances).
 fn sha256_r_concat_puz(r: &[u8], puz: &[u8]) -> [u8; 32] {
@@ -53,9 +62,9 @@ fn sha256_r_concat_puz(r: &[u8], puz: &[u8]) -> [u8; 32] {
 }
 
 /// Pack public bytes the same way `UInt8::new_input_vec` does inside the circuit.
-fn pack_public_inputs(puz: &[u8], y: &[u8]) -> Vec<Fr> {
-    let mut inputs: Vec<Fr> = puz.to_field_elements().unwrap();
-    let y_fe: Vec<Fr> = y.to_field_elements().unwrap();
+fn pack_public_inputs<F: PrimeField>(puz: &[u8], y: &[u8]) -> Vec<F> {
+    let mut inputs: Vec<F> = puz.to_field_elements().unwrap();
+    let y_fe: Vec<F> = y.to_field_elements().unwrap();
     inputs.extend(y_fe);
     inputs
 }
@@ -70,8 +79,8 @@ struct Sha256PuzzleCircuit {
     y: [u8; 32],
 }
 
-impl ConstraintSynthesizer<Fr> for Sha256PuzzleCircuit {
-    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
+impl<F: PrimeField> ConstraintSynthesizer<F> for Sha256PuzzleCircuit {
+    fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
         // 1. Secret R (witness only).
         //
         // Sha256Gadget::digest only takes `&[UInt8<_>]` — allocation is not in
@@ -95,8 +104,7 @@ impl ConstraintSynthesizer<Fr> for Sha256PuzzleCircuit {
     }
 }
 
-#[test]
-fn test_sha256_r_concat_puz_prove_time() {
+fn bench_sha256_curve<E: Pairing>(curve_name: &str) {
     let rng = &mut test_rng();
 
     let mut r = [0u8; R_LEN];
@@ -105,21 +113,19 @@ fn test_sha256_r_concat_puz_prove_time() {
     rng.fill(&mut puz);
     let y = sha256_r_concat_puz(&r, &puz);
 
+    println!("\n========== {curve_name} ==========");
     println!("R   (secret, first 8) = {:02x?}", &r[..8]);
     println!("puz (public, first 8) = {:02x?}", &puz[..8]);
     println!("Y   (public digest)   = {:02x?}", &y[..]);
 
-    let public_inputs = pack_public_inputs(&puz, &y);
+    let public_inputs = pack_public_inputs::<E::ScalarField>(&puz, &y);
     println!(
         "packed public inputs: {} Fr element(s) (puz then Y)",
         public_inputs.len()
     );
-    for (i, fe) in public_inputs.iter().enumerate() {
-        println!("  public_inputs[{i}] = {fe}");
-    }
 
     {
-        let cs = ConstraintSystem::<Fr>::new_ref();
+        let cs = ConstraintSystem::<E::ScalarField>::new_ref();
         Sha256PuzzleCircuit { r: Some(r), puz, y }
             .generate_constraints(cs.clone())
             .unwrap();
@@ -138,14 +144,13 @@ fn test_sha256_r_concat_puz_prove_time() {
     println!("\nSetup...");
     let setup_start = Instant::now();
     let params =
-        generate_random_parameters::<Bls12_377, _, _>(Sha256PuzzleCircuit { r: None, puz, y }, rng)
+        generate_random_parameters::<E, _, _>(Sha256PuzzleCircuit { r: None, puz, y }, rng)
             .expect("setup");
     let setup_time = setup_start.elapsed();
     println!("setup time: {setup_time:?}");
 
     let pvk = prepare_verifying_key(&params.vk);
 
-    const SAMPLES: u32 = 15;
     let mut total_proving = Duration::ZERO;
     let mut total_verifying = Duration::ZERO;
 
@@ -156,7 +161,7 @@ fn test_sha256_r_concat_puz_prove_time() {
         rng.fill(&mut r);
         rng.fill(&mut puz);
         let y = sha256_r_concat_puz(&r, &puz);
-        let public_inputs = pack_public_inputs(&puz, &y);
+        let public_inputs = pack_public_inputs::<E::ScalarField>(&puz, &y);
 
         let start = Instant::now();
         let proof = create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng)
@@ -184,8 +189,8 @@ fn test_sha256_r_concat_puz_prove_time() {
         let y = sha256_r_concat_puz(&r, &puz);
         let proof =
             create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng).unwrap();
-        let mut bad = pack_public_inputs(&puz, &y);
-        bad[0] = Fr::zero();
+        let mut bad = pack_public_inputs::<E::ScalarField>(&puz, &y);
+        bad[0] = E::ScalarField::zero();
         assert!(!verify_proof(&pvk, &proof, &bad).unwrap());
         println!("reject on tampered public inputs ✓");
     }
@@ -201,16 +206,31 @@ fn test_sha256_r_concat_puz_prove_time() {
             create_random_proof(Sha256PuzzleCircuit { r: Some(r), puz, y }, &params, rng).unwrap();
         let mut wrong_puz = puz;
         wrong_puz[0] ^= 1;
-        let bad = pack_public_inputs(&wrong_puz, &y);
+        let bad = pack_public_inputs::<E::ScalarField>(&wrong_puz, &y);
         assert!(!verify_proof(&pvk, &proof, &bad).unwrap());
         println!("reject on wrong puz ✓");
     }
 
     let proving_avg = total_proving / SAMPLES;
     let verifying_avg = total_verifying / SAMPLES;
-    println!("\n=== SHA256(R || puz) = Y (BPR20 / BLS12-377) ===");
+    println!("\n=== SHA256(R || puz) = Y (BPR20 / {curve_name}) ===");
     println!("|R|={R_LEN}, |puz|={PUZ_LEN}");
     println!("setup:              {setup_time:?}");
     println!("avg prove ({SAMPLES}x):   {proving_avg:?}");
     println!("avg verify ({SAMPLES}x): {verifying_avg:?}");
+}
+
+#[test]
+fn test_sha256_r_concat_puz_prove_time() {
+    bench_sha256_curve::<Bls12_381>("BLS12-381");
+
+    println!("\nCooling down for {COOLDOWN:?} before next curve...");
+    thread::sleep(COOLDOWN);
+
+    bench_sha256_curve::<Bls12_377>("BLS12-377");
+
+    println!("\nCooling down for {COOLDOWN:?} before next curve...");
+    thread::sleep(COOLDOWN);
+
+    bench_sha256_curve::<Bn254>("BN254");
 }

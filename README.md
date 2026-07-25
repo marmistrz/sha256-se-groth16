@@ -7,9 +7,9 @@ Changes since the ABPR22 version:
 * added a SHA-256 puzzle integration test (`tests/sha256.rs`).
 * enabled the `asm` feature in `ark-ff` for better performance.
 
-To run the benchmarks with optimal performance, call:
+To run the benchmarks with optimal performance (BLS12-381, BLS12-377, and BN254), call:
 ```
-RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture 
+RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture
 ```
 
 Original README of [Baghery/ABPR22](https://github.com/Baghery/ABPR22) below.
