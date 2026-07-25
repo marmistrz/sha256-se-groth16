@@ -1,26 +1,24 @@
-//! Minimal SHA-256 preimage proof with BPR20, plus timing.
+//! Prove knowledge of `R` such that `SHA256(R || puz) = Y`.
 //!
-//! # What you are proving
+//! - `R`   — **witness** (secret)
+//! - `puz` — **public** puzzle bytes
+//! - `Y`   — **public** SHA-256 digest
 //!
-//! Knowledge of a secret `preimage` such that
-//! `SHA256(preimage) = digest`, where `digest` is public.
-//!
-//! # How to run (release + print timings)
+//! # How to run
 //!
 //! ```bash
-//! cargo test --release --features "std r1cs" --test sha256 -- --nocapture
+//! cargo test --release --test sha256 -- --nocapture
 //! ```
 //!
-//! # Pipeline (read top-to-bottom with the code below)
+//! # Public-input order
 //!
-//! 1. **ConstraintSynthesizer** — describe the statement as R1CS equations.
-//! 2. **Setup** — `generate_random_parameters` builds keys from the circuit *shape*.
-//! 3. **Prove** — `create_random_proof` with a filled-in witness.
-//! 4. **Verify** — `verify_proof` with packed public field elements only.
+//! `verify_proof` receives packed field elements in the **same order** the
+//! circuit allocates them with `new_input` / `new_input_vec`:
+//! first `puz`, then `Y`. Outside the circuit:
 //!
-//! A SNARK does not “run SHA256 like normal Rust.” It proves that a system of
-//! equations has a solution. Gadgets (`UInt8`, `Sha256Gadget`) build those
-//! equations for you.
+//! ```text
+//! public_inputs = puz.to_field_elements() || Y.to_field_elements()
+//! ```
 
 use ark_bls12_377::{Bls12_377, Fr};
 use ark_bpr20::{
@@ -37,102 +35,95 @@ use ark_std::test_rng;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
-/// Fixed preimage length ⇒ fixed circuit shape (required for one-time setup).
-const PREIMAGE_LEN: usize = 32;
+/// Fixed lengths ⇒ fixed circuit shape (one setup for all instances).
+/// 16 + 16 = 32 bytes → one SHA-256 block after padding (quick stand-in for a
+/// single compression; a real compression API would avoid the padding block).
+const R_LEN: usize = 16;
+const PUZ_LEN: usize = 16;
 
-/// Native SHA-256 used only to build a concrete instance outside the circuit.
-fn sha256_hash(preimage: &[u8]) -> [u8; 32] {
+/// Native SHA-256 of `R || puz` (used only to build concrete instances).
+fn sha256_r_concat_puz(r: &[u8], puz: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    hasher.update(preimage);
+    hasher.update(r);
+    hasher.update(puz);
     let result = hasher.finalize();
     let mut out = [0u8; 32];
     out.copy_from_slice(&result);
     out
 }
 
-/// The circuit / statement.
-///
-/// - `preimage`: **witness** (secret). `None` during setup, `Some` when proving.
-/// - `digest`: **public input**. Verifier knows this; prover must match it.
-///
-/// Implementing `ConstraintSynthesizer` means: given a constraint system `cs`,
-/// allocate variables and enforce equations. Setup and prove both call this.
-struct Sha256PreimageCircuit {
-    preimage: Option<[u8; PREIMAGE_LEN]>,
-    digest: [u8; 32],
+/// Pack public bytes the same way `UInt8::new_input_vec` does inside the circuit.
+fn pack_public_inputs(puz: &[u8], y: &[u8]) -> Vec<Fr> {
+    let mut inputs: Vec<Fr> = puz.to_field_elements().unwrap();
+    let y_fe: Vec<Fr> = y.to_field_elements().unwrap();
+    inputs.extend(y_fe);
+    inputs
 }
 
-impl ConstraintSynthesizer<Fr> for Sha256PreimageCircuit {
+/// Statement: knowledge of `R` s.t. SHA256(R || puz) = Y.
+struct Sha256PuzzleCircuit {
+    /// Secret randomness / preimage prefix. `None` during setup.
+    r: Option<[u8; R_LEN]>,
+    /// Public puzzle.
+    puz: [u8; PUZ_LEN],
+    /// Public digest Y = SHA256(R || puz).
+    y: [u8; 32],
+}
+
+impl ConstraintSynthesizer<Fr> for Sha256PuzzleCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        // ------------------------------------------------------------------
-        // 1. Allocate the SECRET preimage as witness variables.
-        //    These never appear in verify_proof's public_inputs slice.
-        // ------------------------------------------------------------------
-        let preimage_slots: [Option<u8>; PREIMAGE_LEN] = match self.preimage {
-            Some(bytes) => {
-                let mut slots = [None; PREIMAGE_LEN];
-                for (slot, b) in slots.iter_mut().zip(bytes.iter()) {
-                    *slot = Some(*b);
-                }
-                slots
-            }
-            // Setup path: no assignment yet; shape of the circuit still exists.
-            None => [None; PREIMAGE_LEN],
-        };
-        let preimage_vars = UInt8::new_witness_vec(cs.clone(), &preimage_slots)?;
+        // 1. Secret R (witness only).
+        //
+        // Sha256Gadget::digest only takes `&[UInt8<_>]` — allocation is not in
+        // its docs. Use `UInt8::new_witness_vec`, which wants one `Option<u8>`
+        // per byte: `Some` when proving, `None` during setup (shape only).
+        let r_vals: [Option<u8>; R_LEN] =
+            self.r.map(|bytes| bytes.map(Some)).unwrap_or([None; R_LEN]);
+        let r_vars = UInt8::new_witness_vec(cs.clone(), &r_vals)?;
 
-        // ------------------------------------------------------------------
-        // 2. Allocate the PUBLIC digest.
-        //    `new_input_vec` packs bytes into field elements (not 1 Fr per byte).
-        //    That packing is exactly what verify_proof must receive later.
-        // ------------------------------------------------------------------
-        let digest_vars = UInt8::new_input_vec(cs.clone(), &self.digest)?;
+        // 2. Public puz, then public Y (allocation order = verify order).
+        let puz_vars = UInt8::new_input_vec(cs.clone(), &self.puz)?;
+        let y_vars = UInt8::new_input_vec(cs.clone(), &self.y)?;
 
-        // ------------------------------------------------------------------
-        // 3. Enforce SHA256(preimage) == digest inside R1CS.
-        //    Sha256Gadget adds ~tens of thousands of constraints for one block.
-        // ------------------------------------------------------------------
-        let hash = Sha256Gadget::digest(&preimage_vars)?;
-        hash.0.enforce_equal(&digest_vars)?;
+        // 3. Hash the concatenation R || puz and enforce equality with Y.
+        let mut message = r_vars;
+        message.extend(puz_vars);
+        let hash = Sha256Gadget::digest(&message)?;
+        hash.0.enforce_equal(&y_vars)?;
 
         Ok(())
     }
 }
 
 #[test]
-fn test_sha256_preimage_prove_time() {
+fn test_sha256_r_concat_puz_prove_time() {
     let rng = &mut test_rng();
 
-    // Concrete instance: pick a secret, hash it in plain Rust.
-    let mut preimage = [0u8; PREIMAGE_LEN];
-    rng.fill(&mut preimage);
-    let digest = sha256_hash(&preimage);
+    let mut r = [0u8; R_LEN];
+    let mut puz = [0u8; PUZ_LEN];
+    rng.fill(&mut r);
+    rng.fill(&mut puz);
+    let y = sha256_r_concat_puz(&r, &puz);
 
-    println!("preimage (secret, first 8 bytes) = {:02x?}", &preimage[..8]);
-    println!("digest   (public)                = {:02x?}", &digest[..]);
+    println!("R   (secret, first 8) = {:02x?}", &r[..8]);
+    println!("puz (public, first 8) = {:02x?}", &puz[..8]);
+    println!("Y   (public digest)   = {:02x?}", &y[..]);
 
-    // ----------------------------------------------------------------------
-    // Public inputs for the verifier.
-    //
-    // Because we used UInt8::new_input_vec, public inputs are *packed* Frs.
-    // On BLS12-377, CAPACITY/8 = 31, so 32 digest bytes → 2 field elements.
-    // Passing one Fr per byte (or raw bytes) would make verification fail.
-    // ----------------------------------------------------------------------
-    let public_inputs: Vec<Fr> = digest.to_field_elements().unwrap();
+    let public_inputs = pack_public_inputs(&puz, &y);
     println!(
-        "packed public inputs: {} Fr element(s)",
+        "packed public inputs: {} Fr element(s) (puz then Y)",
         public_inputs.len()
     );
     for (i, fe) in public_inputs.iter().enumerate() {
         println!("  public_inputs[{i}] = {fe}");
     }
 
-    // Constraint count (dry synthesize with a real witness).
     {
         let cs = ConstraintSystem::<Fr>::new_ref();
-        Sha256PreimageCircuit {
-            preimage: Some(preimage),
-            digest,
+        Sha256PuzzleCircuit {
+            r: Some(r),
+            puz,
+            y,
         }
         .generate_constraints(cs.clone())
         .unwrap();
@@ -140,18 +131,21 @@ fn test_sha256_preimage_prove_time() {
         println!("R1CS constraints: {}", cs.num_constraints());
         println!("instance vars:    {}", cs.num_instance_variables());
         println!("witness vars:     {}", cs.num_witness_variables());
+        println!(
+            "message length:   {} bytes (R || puz) → {} SHA-256 block(s) after padding",
+            R_LEN + PUZ_LEN,
+            // 64-byte message needs padding → two 64-byte blocks
+            ((R_LEN + PUZ_LEN) + 9 + 63) / 64
+        );
     }
 
-    // ----------------------------------------------------------------------
-    // SETUP — circuit shape only (`preimage: None`). Produces proving key + VK.
-    // Expensive; do once per circuit shape and reuse.
-    // ----------------------------------------------------------------------
     println!("\nSetup...");
     let setup_start = Instant::now();
     let params = generate_random_parameters::<Bls12_377, _, _>(
-        Sha256PreimageCircuit {
-            preimage: None,
-            digest,
+        Sha256PuzzleCircuit {
+            r: None,
+            puz,
+            y,
         },
         rng,
     )
@@ -161,27 +155,25 @@ fn test_sha256_preimage_prove_time() {
 
     let pvk = prepare_verifying_key(&params.vk);
 
-    // ----------------------------------------------------------------------
-    // PROVE / VERIFY loop — time the prove path (what we care about).
-    // SHA-256 circuits are heavy; keep sample count small.
-    // ----------------------------------------------------------------------
-    const SAMPLES: u32 = 5;
+    const SAMPLES: u32 = 15;
     let mut total_proving = Duration::ZERO;
     let mut total_verifying = Duration::ZERO;
 
     println!("\nProving ({SAMPLES} samples)...");
     for sample in 0..SAMPLES {
-        // Fresh random preimage each sample (same circuit shape).
-        let mut preimage = [0u8; PREIMAGE_LEN];
-        rng.fill(&mut preimage);
-        let digest = sha256_hash(&preimage);
-        let public_inputs: Vec<Fr> = digest.to_field_elements().unwrap();
+        let mut r = [0u8; R_LEN];
+        let mut puz = [0u8; PUZ_LEN];
+        rng.fill(&mut r);
+        rng.fill(&mut puz);
+        let y = sha256_r_concat_puz(&r, &puz);
+        let public_inputs = pack_public_inputs(&puz, &y);
 
         let start = Instant::now();
         let proof = create_random_proof(
-            Sha256PreimageCircuit {
-                preimage: Some(preimage),
-                digest,
+            Sha256PuzzleCircuit {
+                r: Some(r),
+                puz,
+                y,
             },
             &params,
             rng,
@@ -201,29 +193,57 @@ fn test_sha256_preimage_prove_time() {
         println!("  sample {sample}: prove={prove_dt:?}, verify={verify_dt:?}");
     }
 
-    // Sanity: wrong public input must reject.
+    // Reject wrong Y.
     {
-        let mut preimage = [0u8; PREIMAGE_LEN];
-        rng.fill(&mut preimage);
-        let digest = sha256_hash(&preimage);
+        let mut r = [0u8; R_LEN];
+        let mut puz = [0u8; PUZ_LEN];
+        rng.fill(&mut r);
+        rng.fill(&mut puz);
+        let y = sha256_r_concat_puz(&r, &puz);
         let proof = create_random_proof(
-            Sha256PreimageCircuit {
-                preimage: Some(preimage),
-                digest,
+            Sha256PuzzleCircuit {
+                r: Some(r),
+                puz,
+                y,
             },
             &params,
             rng,
         )
         .unwrap();
-        let mut bad = digest.to_field_elements().unwrap();
+        let mut bad = pack_public_inputs(&puz, &y);
         bad[0] = Fr::zero();
         assert!(!verify_proof(&pvk, &proof, &bad).unwrap());
         println!("reject on tampered public inputs ✓");
     }
 
+    // Reject wrong puz (same R/Y would not match H(R||puz')).
+    {
+        let mut r = [0u8; R_LEN];
+        let mut puz = [0u8; PUZ_LEN];
+        rng.fill(&mut r);
+        rng.fill(&mut puz);
+        let y = sha256_r_concat_puz(&r, &puz);
+        let proof = create_random_proof(
+            Sha256PuzzleCircuit {
+                r: Some(r),
+                puz,
+                y,
+            },
+            &params,
+            rng,
+        )
+        .unwrap();
+        let mut wrong_puz = puz;
+        wrong_puz[0] ^= 1;
+        let bad = pack_public_inputs(&wrong_puz, &y);
+        assert!(!verify_proof(&pvk, &proof, &bad).unwrap());
+        println!("reject on wrong puz ✓");
+    }
+
     let proving_avg = total_proving / SAMPLES;
     let verifying_avg = total_verifying / SAMPLES;
-    println!("\n=== SHA256 preimage (BPR20 / BLS12-377) ===");
+    println!("\n=== SHA256(R || puz) = Y (BPR20 / BLS12-377) ===");
+    println!("|R|={R_LEN}, |puz|={PUZ_LEN}");
     println!("setup:              {setup_time:?}");
     println!("avg prove ({SAMPLES}x):   {proving_avg:?}");
     println!("avg verify ({SAMPLES}x): {verifying_avg:?}");
