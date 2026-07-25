@@ -29,7 +29,7 @@ blake2 = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 csv = { version = "1" }
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 ark-bls12-381 = { version = "0.6.0", default-features = false, features = ["curve"] }
 ark-bls12-377 = { version = "0.6.0", default-features = false, features = ["curve"] }
 ark-bn254 = { version = "0.6.0", default-features = false, features = ["curve"] }
