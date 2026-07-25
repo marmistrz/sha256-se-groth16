@@ -1,6 +1,6 @@
 # Simulation-extractable Groth16 SHA-256 PoC
 
-This repository benchmarks the cost of running the prover for H(puz, R) = Y, where (puz, Y) are public and R is private. 
+This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y, where (puz, Y) are public and R is private. 
 
 Changes since the ABPR22 version:
 * ported the native prover/verifier from arkworks 0.3 to **0.6**. In-circuit *verifier* gadgets (`src/constraints.rs` — the old Groth16-style `SNARKGadget` for checking a proof inside another circuit, i.e. recursion) were not ported and the module is empty. That does not affect this PoC: proving/verifying `SHA256(R ‖ puz) = Y` only needs the native SNARK plus SHA-256 circuit gadgets, which still work.
@@ -11,6 +11,14 @@ To run the benchmarks with optimal performance (BLS12-381, BLS12-377, and BN254)
 ```
 RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture
 ```
+
+Example results for `SHA256(R ‖ puz) = Y` with `|R|=16`, `|puz|=16` (15 prove/verify samples, `target-cpu=native`):
+
+| Curve     | Setup        | Avg prove   | Avg verify |
+|-----------|-------------:|------------:|-----------:|
+| BLS12-381 | 419.8 ms     | 211.7 ms    | 2.03 ms    |
+| BLS12-377 | 405.6 ms     | 219.2 ms    | 2.15 ms    |
+| BN254     | 235.2 ms     | 146.7 ms    | 1.35 ms    |
 
 Original README of [Baghery/ABPR22](https://github.com/Baghery/ABPR22) below.
 
