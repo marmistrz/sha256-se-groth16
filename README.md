@@ -1,3 +1,21 @@
+# Simulation-extractable Groth16 SHA-256 PoC
+
+This repository benchmarks the cost of running the prover for H(puz, R) = Y, where (puz, Y) are public and R is private. 
+
+Changes since the ABPR22 version:
+* ported the native prover/verifier from arkworks 0.3 to **0.6**. In-circuit *verifier* gadgets (`src/constraints.rs` — the old Groth16-style `SNARKGadget` for checking a proof inside another circuit, i.e. recursion) were not ported and the module is empty. That does not affect this PoC: proving/verifying `SHA256(R ‖ puz) = Y` only needs the native SNARK plus SHA-256 circuit gadgets, which still work.
+* added a SHA-256 puzzle integration test (`tests/sha256.rs`).
+* enabled the `asm` feature in `ark-ff` for better performance.
+
+To run the benchmarks with optimal performance, call:
+```
+RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture 
+```
+
+Original README of [Baghery/ABPR22](https://github.com/Baghery/ABPR22) below.
+
+----
+
 <h1 align="center">ark-abpr21 (RO_Based)</h1>
 
 <p align="center">

@@ -1,10 +1,11 @@
 use crate::{r1cs_to_qap::R1CStoQAP, Proof, ProvingKey};
-use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, Group, VariableBaseMSM};
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand, Zero, One};
 use ark_std::ops::Mul;
 use ark_poly::GeneralEvaluationDomain;
-use ark_relations::r1cs::{
+use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, Result as R1CSResult,
+    SynthesisMode,
 };
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
@@ -91,15 +92,20 @@ where
     let prover_time = start_timer!(|| "BPR20::Prover");
     let cs = ConstraintSystem::new_ref();
     cs.set_optimization_goal(OptimizationGoal::Constraints);
+    cs.set_mode(SynthesisMode::Prove {
+        construct_matrices: true,
+        generate_lc_assignments: false,
+    });
 
     let synthesis_time = start_timer!(|| "Constraint synthesis");
     circuit.generate_constraints(cs.clone())?;
-    debug_assert!(cs.is_satisfied().unwrap());
     end_timer!(synthesis_time);
 
     let lc_time = start_timer!(|| "Inlining LCs");
     cs.finalize();
     end_timer!(lc_time);
+
+    debug_assert!(cs.is_satisfied().unwrap());
 
     let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
     let h = R1CStoQAP::witness_map::<E::ScalarField, D<E::ScalarField>>(cs.clone())?;
@@ -107,8 +113,10 @@ where
 
     let c_acc_time = start_timer!(|| "Compute C");
     let prover = cs.borrow().unwrap();
+    let witness_assignment = prover.witness_assignment().unwrap();
+    let instance_assignment = prover.instance_assignment().unwrap();
 
-    let aux_assignment = cfg_iter!(prover.witness_assignment)
+    let aux_assignment = cfg_iter!(witness_assignment)
         .map(|s| s.into_bigint())
         .collect::<Vec<_>>();
 
@@ -118,7 +126,7 @@ where
     let r_s_delta_g1 = delta_prime_g1.mul(r * s);
     end_timer!(c_acc_time);
 
-    let input_assignment = prover.instance_assignment[1..]
+    let input_assignment = instance_assignment[1..]
         .iter()
         .map(|s| s.into_bigint())
         .collect::<Vec<_>>();
@@ -129,7 +137,7 @@ where
     let a_acc_time = start_timer!(|| "Compute A");
     let r_g1 = delta_prime_g1.mul(r);
     let g_a = calculate_coeff(r_g1, &pk.a_query, pk.vk.alpha_g1, &assignment);
-    let s_g_a = g_a.mul_bigint(&s.into_bigint());
+    let s_g_a = g_a * &s;
     end_timer!(a_acc_time);
 
     let g1_b = if !r.is_zero() {
@@ -145,7 +153,7 @@ where
     let b_g2_acc_time = start_timer!(|| "Compute B in G2");
     let s_g2 = delta_prime_g2.mul(s);
     let g2_b = calculate_coeff(s_g2, &pk.b_g2_query, pk.vk.beta_g2, &assignment);
-    let r_g1_b = g1_b.mul_bigint(&r.into_bigint());
+    let r_g1_b = g1_b * &r;
     drop(assignment);
     end_timer!(b_g2_acc_time);
 
@@ -160,14 +168,14 @@ where
         .map(|s| (s * zeta_m_inv).into_bigint())
         .collect::<Vec<_>>();
     let h_acc = E::G1::msm_bigint(&pk.h_query, &h_assignment);
-    let aux_assignment_unscaled = cfg_iter!(prover.witness_assignment)
+    let aux_assignment_unscaled = cfg_iter!(witness_assignment)
         .map(|s| (*s * zeta_m_inv).into_bigint())
         .collect::<Vec<_>>();
     let l_aux_acc = E::G1::msm_bigint(&pk.l_query, &aux_assignment_unscaled);
 
-    let mut g_c = s_g_a.mul_bigint(&factor.into_bigint());
-    g_c += &r_g1_b.mul_bigint(&factor.into_bigint());
-    g_c -= &r_s_delta_g1.mul_bigint(&factor.into_bigint());
+    let mut g_c = s_g_a * &factor;
+    g_c += &(r_g1_b * &factor);
+    g_c -= &(r_s_delta_g1 * &factor);
     g_c += &l_aux_acc;
     g_c += &h_acc;
     end_timer!(c_time);
@@ -189,7 +197,7 @@ fn calculate_coeff<G: AffineRepr>(
     assignment: &[<G::ScalarField as PrimeField>::BigInt],
 ) -> G::Group
 where
-    G::Group: VariableBaseMSM<MulBase = G>,
+    G::Group: VariableBaseMSM,
 {
     let el = query[0];
     let acc = G::Group::msm_bigint(&query[1..], assignment);

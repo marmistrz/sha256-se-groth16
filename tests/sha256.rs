@@ -7,7 +7,7 @@
 //! # How to run
 //!
 //! ```bash
-//! cargo test --release --test sha256 -- --nocapture
+//! -
 //! ```
 //!
 //! # Public-input order
@@ -27,7 +27,7 @@ use ark_bpr20::{
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
 use ark_ff::{ToConstraintField, Zero};
 use ark_r1cs_std::prelude::*;
-use ark_relations::r1cs::{
+use ark_relations::gr1cs::{
     ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError,
 };
 use ark_std::rand::Rng;

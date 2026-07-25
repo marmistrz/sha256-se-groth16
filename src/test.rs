@@ -7,8 +7,8 @@ use core::ops::MulAssign;
 
 use ark_ff::Field;
 use ark_relations::{
+    gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
     lc,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
 };
 
 struct MySillyCircuit<F: Field> {
@@ -31,12 +31,12 @@ impl<ConstraintF: Field> ConstraintSynthesizer<ConstraintF> for MySillyCircuit<C
             Ok(a)
         })?;
 
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
-        cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
+        cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)?;
 
         Ok(())
     }

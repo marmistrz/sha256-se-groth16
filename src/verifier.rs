@@ -1,13 +1,11 @@
-use ark_ec::{
-    pairing::Pairing, scalar_mul::fixed_base::FixedBase, AffineRepr, CurveGroup,
-};
+use ark_ec::{pairing::Pairing, scalar_mul::BatchMulPreprocessing, AffineRepr, CurveGroup};
 use ark_ff::PrimeField;
 use ark_std::ops::Mul;
 
 use crate::prover::fiat_shamir_challenge;
 use super::{PreparedVerifyingKey, Proof, VerifyingKey};
 
-use ark_relations::r1cs::{Result as R1CSResult, SynthesisError};
+use ark_relations::gr1cs::{Result as R1CSResult, SynthesisError};
 
 use core::ops::{AddAssign, Neg};
 use ark_std::vec::Vec;
@@ -26,7 +24,7 @@ pub fn prepare_inputs<E: Pairing>(
     public_inputs: &[E::ScalarField],
 ) -> R1CSResult<E::G1> {
     if (public_inputs.len() + 1) != pvk.vk.gamma_abc_g1.len() {
-        return Err(SynthesisError::MalformedVerifyingKey);
+        return Err(SynthesisError::Unsatisfiable);
     }
 
     let mut g_ic = pvk.vk.gamma_abc_g1[0].into_group();
@@ -61,7 +59,7 @@ pub fn verify_proof_with_prepared_inputs<E: Pairing>(
         ],
     );
 
-    let test = E::final_exponentiation(qap).ok_or(SynthesisError::UnexpectedIdentity)?;
+    let test = E::final_exponentiation(qap).unwrap();
 
     Ok(test.0 == pvk.vk.alpha_g1_beta_g2)
 }
@@ -94,14 +92,8 @@ pub fn vec_verify_proof_with_prepared_inputs<E: Pairing>(
         ));
     }
 
-    let scalar_bits = E::ScalarField::MODULUS_BIT_SIZE as usize;
-    let delta_g2_window = FixedBase::get_mul_window_size(num_proofs);
-    let delta_g2_table = FixedBase::get_window_table::<E::G2>(
-        scalar_bits,
-        delta_g2_window,
-        pvk.vk.delta_g2.into_group(),
-    );
-    let elem_g2 = FixedBase::msm::<E::G2>(scalar_bits, delta_g2_window, &delta_g2_table, &m_fr);
+    let table = BatchMulPreprocessing::new(pvk.vk.delta_g2.into_group(), num_proofs);
+    let elem_g2 = table.batch_mul(&m_fr);
 
     println!(
         "Hashing + Exponentiation (G2) time is {}ns per proof doing {} exponentiations",
@@ -111,7 +103,9 @@ pub fn vec_verify_proof_with_prepared_inputs<E: Pairing>(
 
     let mut bool_results: Vec<_> = Vec::new();
     for ((x, y), z) in elem_g2.iter().zip(proofs.iter()).zip(prepared_inputs.iter()) {
-        let delta_term = (*x + y.delta_prime.into_group()).neg().into_affine();
+        let delta_term = (x.into_group() + y.delta_prime.into_group())
+            .neg()
+            .into_affine();
         let tmp1 = E::final_exponentiation(E::multi_miller_loop(
             [
                 <E::G1Affine as Into<E::G1Prepared>>::into(y.a),

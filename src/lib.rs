@@ -30,7 +30,7 @@ pub mod prover;
 /// Verify proofs for the BPR20 zkSNARK construction.
 pub mod verifier;
 
-/// Constraints for the BPR20 verifier (stubbed for this 0.4 migration).
+/// Constraints for the BPR20 verifier (stubbed — see README).
 #[cfg(feature = "r1cs")]
 pub mod constraints;
 
@@ -41,11 +41,11 @@ pub use self::data_structures::*;
 pub use self::{generator::*, prover::*, verifier::*};
 pub use ark_std::vec::Vec;
 
-use ark_crypto_primitives::snark::*;
 use ark_ec::pairing::Pairing;
-use ark_relations::r1cs::{ConstraintSynthesizer, SynthesisError};
-use ark_std::rand::{RngCore, CryptoRng};
+use ark_relations::gr1cs::{ConstraintSynthesizer, SynthesisError};
+use ark_snark::*;
 use ark_std::marker::PhantomData;
+use ark_std::rand::RngCore;
 
 /// The SNARK of [[BPR20]](https://eprint.iacr.org/2020/1306.pdf).
 pub struct BPR20<E: Pairing> {
@@ -59,7 +59,7 @@ impl<E: Pairing> SNARK<E::ScalarField> for BPR20<E> {
     type ProcessedVerifyingKey = PreparedVerifyingKey<E>;
     type Error = SynthesisError;
 
-    fn circuit_specific_setup<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore + CryptoRng>(
+    fn circuit_specific_setup<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore>(
         circuit: C,
         rng: &mut R,
     ) -> Result<(Self::ProvingKey, Self::VerifyingKey), Self::Error> {
@@ -69,7 +69,7 @@ impl<E: Pairing> SNARK<E::ScalarField> for BPR20<E> {
         Ok((pk, vk))
     }
 
-    fn prove<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore + CryptoRng>(
+    fn prove<C: ConstraintSynthesizer<E::ScalarField>, R: RngCore>(
         pk: &Self::ProvingKey,
         circuit: C,
         rng: &mut R,
