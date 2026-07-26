@@ -1,6 +1,7 @@
 # Simulation-extractable Groth16 SHA-256 PoC
 
-This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y, where (puz, Y) are public and R is private. 
+This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y, where (puz, Y) are public and R is private,
+using the [simulation-extractable variant of Groth16](https://eprint.iacr.org/2020/1306).
 
 Changes since the ABPR22 version:
 * ported the native prover/verifier from arkworks 0.3 to **0.6**. In-circuit *verifier* gadgets (`src/constraints.rs` — the old Groth16-style `SNARKGadget` for checking a proof inside another circuit, i.e. recursion) were not ported and the module is empty. That does not affect this PoC: proving/verifying `SHA256(R ‖ puz) = Y` only needs the native SNARK plus SHA-256 circuit gadgets, which still work.
