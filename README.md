@@ -1,6 +1,6 @@
 # Simulation-extractable Groth16 SHA-256 PoC
 
-This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y, where (puz, Y) are public and R is private,
+This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y`, where (puz, Y) are public and R is private,
 using the [simulation-extractable variant of Groth16](https://eprint.iacr.org/2020/1306).
 
 Changes since the ABPR22 version:
