@@ -10,20 +10,20 @@ Changes since the ABPR22 version:
 
 To run the benchmarks with optimal performance (BLS12-381, BLS12-377, and BN254), call:
 ```
-RUSTFLAGS="-C target-cpu=native" SAMPLES=30 COOLDOWN=10 cargo test --release --test sha256 -- --nocapture
+RUSTFLAGS="-C target-cpu=native" SAMPLES=25 COOLDOWN=60 cargo test --release --test sha256 -- --nocapture
 ```
 Benchmarks are configured through env vars:
 * `SAMPLES` (default 3)
 * `COOLDOWN` (seconds, default 0).
 
-Results for `SHA256(R ‖ puz) = Y` with `|R|=|puz|=16B` (15 prove/verify samples),
+Results for `SHA256(R ‖ puz) = Y` with `|R|=|puz|=16B` (25 prove/verify samples),
 conducted on a Dell Latitude 7440 (Intel i7-1365U CPU, 16GB RAM):
 
 | Curve     | Setup        | Avg prove   | Avg verify |
 |-----------|-------------:|------------:|-----------:|
-| BLS12-381 | 419.8 ms     | 211.7 ms    | 2.03 ms    |
-| BLS12-377 | 405.6 ms     | 219.2 ms    | 2.15 ms    |
-| BN254     | 235.2 ms     | 146.7 ms    | 1.35 ms    |
+| BLS12-381 | 427.5 ms     | 218.3 ms    | 2.26 ms    |
+| BLS12-377 | 416.5 ms     | 208.4 ms    | 2.64 ms    |
+| BN254     | 257.2 ms     | 150.0 ms    | 1.51 ms    |
 
 Original README of [Baghery/ABPR22](https://github.com/Baghery/ABPR22) below.
 
