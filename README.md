@@ -1,19 +1,23 @@
 # Simulation-extractable Groth16 SHA-256 PoC
 
-This repository benchmarks the cost of running the prover for `SHA256(R ‖ puz) = Y`, where (puz, Y) are public and R is private,
-using the [simulation-extractable variant of Groth16](https://eprint.iacr.org/2020/1306).
+This repository benchmarks the cost of running the signature of knowledge for `SHA256(R ‖ puz) = Y` under a public `tag`, where `(puz, Y, tag)` is a public statement and `R` is a private witness. The `tag` is allocated as a public input but unused by the hash circuit: the SoK-style label (e.g. `CRHF(message)`) that binds the proof so it does not verify under a different `tag'`. The underlying SE-NIZK is the [simulation-extractable variant of Groth16](https://eprint.iacr.org/2020/1306).
+
 
 Changes since the ABPR22 version:
 * ported the native prover/verifier from arkworks 0.3 to **0.6**. In-circuit *verifier* gadgets (`src/constraints.rs` — the old Groth16-style `SNARKGadget` for checking a proof inside another circuit, i.e. recursion) were not ported and the module is empty. That does not affect this PoC: proving/verifying `SHA256(R ‖ puz) = Y` only needs the native SNARK plus SHA-256 circuit gadgets, which still work.
-* added a SHA-256 puzzle integration test (`tests/sha256.rs`).
+* added a SHA-256 puzzle integration test (`tests/sha256.rs`), including a reject-under-`tag'` check for statement binding.
 * enabled the `asm` feature in `ark-ff` for better performance.
 
 To run the benchmarks with optimal performance (BLS12-381, BLS12-377, and BN254), call:
 ```
-RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture
+RUSTFLAGS="-C target-cpu=native" SAMPLES=30 COOLDOWN=10 cargo test --release --test sha256 -- --nocapture
 ```
+Benchmarks are configured through env vars:
+* `SAMPLES` (default 3)
+* `COOLDOWN` (seconds, default 0).
+
 Results for `SHA256(R ‖ puz) = Y` with `|R|=|puz|=16B` (15 prove/verify samples),
-conducted on a Dell Latitude 7440 (Intel i7-1365U CPU, 16GB RAM)
+conducted on a Dell Latitude 7440 (Intel i7-1365U CPU, 16GB RAM):
 
 | Curve     | Setup        | Avg prove   | Avg verify |
 |-----------|-------------:|------------:|-----------:|
