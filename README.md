@@ -12,7 +12,7 @@ To run the benchmarks with optimal performance (BLS12-381, BLS12-377, and BN254)
 ```
 RUSTFLAGS="-C target-cpu=native" cargo test --release --test sha256 -- --nocapture
 ```
-Results for `SHA256(R ‖ puz) = Y` with `|R|=|puz|=16` (15 prove/verify samples),
+Results for `SHA256(R ‖ puz) = Y` with `|R|=|puz|=16B` (15 prove/verify samples),
 conducted on a Dell Latitude 7440 (Intel i7-1365U CPU, 16GB RAM)
 
 | Curve     | Setup        | Avg prove   | Avg verify |
