@@ -1,4 +1,4 @@
-# A proof-of-concept signature of knowledge for the SHA-256 preimage relation
+# A proof-of-concept signature of knowledge of a SHA-256 preimage
 
 This repository benchmarks the cost of running the signature of knowledge for `SHA256(R ‖ puz) = Y` under a public `tag`, where `(puz, Y, tag)` is a public statement and `R` is a private witness. The `tag` is allocated as a public input but unused by the hash circuit: the SoK-style label (e.g. `CRHF(message)`) that binds the proof so it does not verify under a different `tag'`. The underlying SE-NIZK is the [simulation-extractable variant of Groth16](https://eprint.iacr.org/2020/1306).
 
